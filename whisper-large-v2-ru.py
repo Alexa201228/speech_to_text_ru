@@ -3,19 +3,16 @@ from transformers import WhisperProcessor, WhisperForConditionalGeneration
 import torch
 import numpy as np
 
-from utils import record_audio
+from utils import load_audio, record_audio
 
 # Load the model and processor
 processor = WhisperProcessor.from_pretrained("mitchelldehaven/whisper-large-v2-ru")
 model = WhisperForConditionalGeneration.from_pretrained("mitchelldehaven/whisper-large-v2-ru")
 
-# Load the audio file
-def load_audio(filename):
-    samplerate, data = read(filename)
-    return data, samplerate
 
-# Record audio
-record_audio(duration=60)
+
+# Uncomment this line if you need to record audio and set recording duration in seconds
+# record_audio(duration=60)
 
 # Preprocess the audio
 filename = "output.wav"
