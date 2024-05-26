@@ -1,4 +1,5 @@
 # Load model directly
+from concurrent.futures import ThreadPoolExecutor
 import time
 import numpy as np
 import torch
@@ -9,27 +10,37 @@ from utils import convert_mp3_to_wav_with_new_sample_rate, load_audio_wav
 processor = AutoProcessor.from_pretrained("openai/whisper-large-v3")
 model = AutoModelForSpeechSeq2Seq.from_pretrained("openai/whisper-large-v3")
 
+
+
 # Split audio into smaller chunks
 def split_audio(audio, samplerate, chunk_duration=30):
     chunk_size = chunk_duration * samplerate
     return [audio[i:i + chunk_size] for i in range(0, len(audio), chunk_size)]
 
-# Preprocess and transcribe audio chunks
-def transcribe_chunks(chunks, samplerate):
+
+# Function to transcribe a single chunk
+def transcribe_chunk(chunk, samplerate):
+    # Ensure the audio is in float32 format
+    chunk = chunk.astype(np.float32)
+    input_features = processor(chunk, sampling_rate=samplerate, return_tensors="pt").input_features
+
+    # Generate transcription
+    with torch.no_grad():
+        predicted_ids = model.generate(input_features)
+
+    # Decode the transcription
+    transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
+    return transcription
+
+# Function to transcribe chunks in parallel
+def transcribe_chunks_in_parallel(chunks, samplerate, max_workers=4):
     transcriptions = []
-    for chunk in chunks:
-        # Ensure the audio is in float32 format
-        chunk = chunk.astype(np.float32) / np.iinfo(np.int16).max
-        input_features = processor(chunk, sampling_rate=samplerate, return_tensors="pt").input_features
-
-        # Generate transcription
-        with torch.no_grad():
-            predicted_ids = model.generate(input_features)
-
-        # Decode the transcription
-        transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
-        transcriptions.append(transcription)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(transcribe_chunk, chunk, samplerate) for chunk in chunks]
+        for future in futures:
+            transcriptions.append(future.result())
     return " ".join(transcriptions)
+
 
 # Paths to your MP3 and WAV files
 mp3_filename = "test_dialog.mp3"
@@ -45,7 +56,7 @@ chunks = split_audio(audio, samplerate)
 
 # Measure the duration of the transcription process
 start_time = time.time()
-transcription = transcribe_chunks(chunks, samplerate)
+transcription = transcribe_chunks_in_parallel(chunks, samplerate)
 end_time = time.time()
 
 # Print the transcription and the duration
